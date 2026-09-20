@@ -121,8 +121,9 @@ object ZoConversations {
         for (container in candidates) {
             val keys = container.keys()
             while (keys.hasNext()) {
-                val o = container.optJSONObject(keys.next()) ?: continue
-                val id = firstString(o, "id", "conversation_id", "uuid", "pk") ?: continue
+                val k = keys.next()
+                val o = container.optJSONObject(k) ?: continue
+                val id = firstString(o, "id", "conversation_id", "uuid", "pk") ?: k
                 val title = firstString(o, "title", "name", "summary", "label") ?: "Untitled"
                 val ts = firstString(o, "updated_at", "last_message_at", "modified_at", "updated", "created_at")
                 val preview = firstString(o, "last_message", "preview", "snippet", "excerpt", "last_user_message")

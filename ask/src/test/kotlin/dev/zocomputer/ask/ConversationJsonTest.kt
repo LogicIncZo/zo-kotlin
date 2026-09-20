@@ -101,25 +101,26 @@ class ConversationJsonTest {
             ZoConversations.speakableDigest(emptyList()),
         )
     }
-}
 
-@Test
-fun `parses map-shaped conversations keyed by id`() {
-    val body = """{
-        "con_7": {"title": "MDR thread", "updated_at": "2026-09-20T10:00:00Z"},
-        "con_8": {"title": "BoB thread"}
-    }"""
-    val out = ZoConversations.parseConversationList(body)
-    assertEquals(2, out.size)
-    assertEquals("con_7", out[0].id)
-    assertEquals("MDR thread", out[0].title)
-}
+    @Test
+    fun `parses map-shaped conversations keyed by id`() {
+        val body = """{
+            "con_7": {"title": "MDR thread", "updated_at": "2026-09-20T10:00:00Z"},
+            "con_8": {"title": "BoB thread"}
+        }"""
+        val out = ZoConversations.parseConversationList(body)
+        assertEquals(2, out.size)
+        val con7 = out.first { it.id == "con_7" }
+        assertEquals("MDR thread", con7.title)
+        assertTrue(out.any { it.id == "con_8" })
+    }
 
-@Test
-fun `parses wrapped map-shaped conversations`() {
-    val body = """{"conversations": {"con_9": {"name": "Wrapped map"}}}"""
-    val out = ZoConversations.parseConversationList(body)
-    assertEquals(1, out.size)
-    assertEquals("con_9", out[0].id)
-    assertEquals("Wrapped map", out[0].title)
+    @Test
+    fun `parses wrapped map-shaped conversations`() {
+        val body = """{"conversations": {"con_9": {"name": "Wrapped map"}}}"""
+        val out = ZoConversations.parseConversationList(body)
+        assertEquals(1, out.size)
+        assertEquals("con_9", out[0].id)
+        assertEquals("Wrapped map", out[0].title)
+    }
 }
