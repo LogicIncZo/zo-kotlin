@@ -21,6 +21,9 @@ data class ZoConversation(
  * shape-tolerant: bare arrays or common wrapper keys, aliased field names.
  * Failures raise ZoException and surface in the UI without breaking chat.
  */
+/** Diagnostic result for [ZoConversations.listWithMeta]. */
+data class ConversationFetch(val httpCode: Int, val bodyHead: String, val conversations: List<ZoConversation>)
+
 object ZoConversations {
     const val BASE_URL = "https://api.zo.computer"
 
@@ -28,6 +31,24 @@ object ZoConversations {
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
+
+    /**
+     * Diagnostic fetch: returns HTTP code, first bytes of the raw body and the
+     * parsed list (possibly empty). Never throws for HTTP-level errors — the
+     * caller decides what to show. Network IOExceptions still propagate.
+     */
+    fun listWithMeta(token: String): ConversationFetch {
+        val req = Request.Builder()
+            .url("$BASE_URL/conversations")
+            .header("Authorization", "Bearer $token")
+            .get()
+            .build()
+        client.newCall(req).execute().use { resp ->
+            val body = resp.body?.string().orEmpty()
+            val parsed = if (resp.isSuccessful) parseConversationList(body) else emptyList()
+            return ConversationFetch(resp.code, body.take(400), parsed)
+        }
+    }
 
     fun list(token: String): List<ZoConversation> {
         val req = Request.Builder()
@@ -71,7 +92,10 @@ object ZoConversations {
     fun unwrapArray(body: String): JSONArray? {
         val root = runCatching { JSONObject(body) }.getOrNull()
         if (root != null) {
-            for (key in listOf("conversations", "items", "data", "results", "messages", "history")) {
+            for (key in listOf(
+                "conversations", "chats", "threads", "items", "rows",
+                "data", "results", "result", "messages", "history", "entries",
+            )) {
                 val v = root.optJSONArray(key)
                 if (v != null) return v
             }
@@ -80,8 +104,36 @@ object ZoConversations {
         return runCatching { JSONArray(body) }.getOrNull()
     }
 
+    /**
+     * Map-shaped fallback: some APIs key conversations by id, e.g.
+     * {"con_abc": {...}} or {"conversations": {"con_abc": {...}}}.
+     * Collects any object value that carries an id-ish field.
+     */
+    fun parseConversationMap(body: String): List<ZoConversation> {
+        val root = runCatching { JSONObject(body) }.getOrNull() ?: return emptyList()
+        val candidates = mutableListOf<JSONObject>()
+        for (key in listOf("conversations", "chats", "threads", "data", "result")) {
+            val inner = root.optJSONObject(key)
+            if (inner != null) { candidates.add(inner); break }
+        }
+        if (candidates.isEmpty()) candidates.add(root)
+        val out = ArrayList<ZoConversation>()
+        for (container in candidates) {
+            val keys = container.keys()
+            while (keys.hasNext()) {
+                val o = container.optJSONObject(keys.next()) ?: continue
+                val id = firstString(o, "id", "conversation_id", "uuid", "pk") ?: continue
+                val title = firstString(o, "title", "name", "summary", "label") ?: "Untitled"
+                val ts = firstString(o, "updated_at", "last_message_at", "modified_at", "updated", "created_at")
+                val preview = firstString(o, "last_message", "preview", "snippet", "excerpt", "last_user_message")
+                out.add(ZoConversation(id, title, ts, preview))
+            }
+        }
+        return out
+    }
+
     fun parseConversationList(body: String): List<ZoConversation> {
-        val arr = unwrapArray(body) ?: return emptyList()
+        val arr = unwrapArray(body) ?: return parseConversationMap(body)
         val out = ArrayList<ZoConversation>()
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
