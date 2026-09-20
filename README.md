@@ -1,48 +1,50 @@
-# zo-mcp-sdk
+# zo-kotlin
 
-Kotlin SDK for Zo Computer's MCP surface (`https://api.zo.computer/mcp`) — JSON-RPC 2.0
-over streamable HTTP. Pure Kotlin + OkHttp, zero MCP SDK dependencies, JVM 17.
+Kotlin SDK for [Zo Computer](https://zo.computer) — two JVM modules, one repo:
 
-Authored after studying `EthanThatOneKid/zocomputer-tools` (TypeScript client for the
-same endpoint) — this is the Kotlin equivalent.
+| Module | Surface | Coordinates |
+| --- | --- | --- |
+| `ask` | `POST /zo/ask` (SSE streaming chat), `GET /models/available`, `GET /personas/available`, `GET /conversations`(+`/{id}`), sentence chunking / TTS sanitization | `dev.zocomputer:ask` |
+| `mcp` | `https://api.zo.computer/mcp` — JSON-RPC 2.0 over streamable HTTP, all 104 agent tools | `dev.zocomputer:mcp` |
+
+Kotlin sibling of EthanThatOneKid's [`zocomputer-tools`](https://github.com/EthanThatOneKid/zocomputer-tools)
+(TS). Auth: `Authorization: Bearer <token>` with a Zo access token (`zo_sk_…`) or the
+session identity token.
 
 ## Usage
 
 ```kotlin
-import dev.zocomputer.mcp.ZoComputer
+// chat with streaming deltas (callback API; Call.cancel() is the cancel path)
+val zo = ZoApi(
+    options = ZoApi.Options(token = System.getenv("ZO_API_KEY")),
+)
+val call = ZoApi.ask(
+    opts = zo.options,
+    input = "hello",
+    conversationId = null,
+    onDelta = { /* assistant text chunk */ },
+    onStatus = { /* "Thinking…" etc. */ },
+    onDone = { convId -> /* keep convId to continue the chat */ },
+    onError = { err -> },
+)
 
-val zo = ZoComputer(
-    endpoint = "https://api.zo.computer/mcp",
-    token = System.getenv("ZO_CLIENT_IDENTITY_TOKEN"),
-)
-zo.connect()                    // initialize + notifications/initialized handshake
-val tools = zo.listTools()      // 104 tools
-val result = zo.toolsCall(
-    name = "bash",
-    args = """{"cmd":"echo hi"}""",
-)
-println(result.text)            // joined text blocks; result.isError on failure
+// conversations (shape-tolerant: bare array or wrapped, field aliases, ISO/epoch ts)
+val convs = ZoConversations.list(token)
+val history = ZoConversations.history(token, convs.first().id)
+println(ZoConversations.speakableDigest(history))
+
+// MCP surface
+val client = ZoMcpClient(auth = System.getenv("ZO_API_KEY"))
+client.connect()
+client.toolsCall("web_search", JSONObject().put("query", "upi mdr"))
 ```
-
-Inside a Zo sandbox the token is pre-bound as `ZO_CLIENT_IDENTITY_TOKEN`. From outside,
-create an access token at Zo → Settings → Advanced → Access Tokens and pass it in.
-
-Note: the MCP surface exposes Zo's *agent tools* (bash, web search, image gen, app
-integrations…). It does not expose conversation history — use the `zo_sk_` REST API
-(`/conversations`) for that.
-
-## Layout
-
-- `src/main/kotlin/dev/zocomputer/mcp/ZoComputer.kt` — client facade
-- `src/main/kotlin/dev/zocomputer/mcp/ZoMcp.kt` — transport + parsing
-- `src/main/kotlin/dev/zocomputer/mcp/McpJson.kt` — JSON-RPC frame builders/parsers
-- `src/main/kotlin/dev/zocomputer/mcp/Demo.kt` — live demo (`make demo`)
-- `src/test/kotlin/` — 11 JVM unit tests (frames, SSE extraction, parse robustness)
 
 ## Verify
 
-```bash
-make test    # unit tests
-make verify  # tests + build
-make demo    # live round-trip against api.zo.computer
+```sh
+make verify   # 33 JVM unit tests across both modules + build
+make demo     # live MCP round-trip (needs ZO_CLIENT_IDENTITY_TOKEN)
 ```
+
+Pure logic (SSE framing, conversation JSON, sentence chunking) lives in framework-free
+classes under `ask/src/main/kotlin/dev/zocomputer/ask/` so coverage stays on the JVM.

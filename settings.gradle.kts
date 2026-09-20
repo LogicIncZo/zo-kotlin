@@ -1,1 +1,4 @@
-rootProject.name = "zo-mcp-sdk"
+rootProject.name = "zo-kotlin"
+
+include(":mcp")
+include(":ask")
